@@ -1,5 +1,9 @@
 #!/bin/bash
 
+export HF_HOME=/NS/llm-1/nobackup/afkhan/HF_CACHE/Misc
+export HF_DATASETS_CACHE=/NS/llm-1/nobackup/afkhan/HF_CACHE/Datasets
+export TRANSFORMERS_CACHE=/NS/llm-1/nobackup/afkhan/HF_CACHE/Models
+
 # Define the fine-tuning methods to explore
 # fine_tuning_methods=("full-finetuning" "prefix-tuning" "prompt-tuning" "lora" "ia3" "p-tuning" "freeze-subset")
 fine_tuning_methods=("full-finetuning" "prefix-tuning" "prompt-tuning" "lora" "ia3" "p-tuning")
