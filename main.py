@@ -1,38 +1,7 @@
 import argparse
-import numpy as np
 import os
-import itertools
-import pandas as pd
-import random
-import math
 import wandb
-from transformers import (
-    DataCollatorForLanguageModeling,
-    PreTrainedModel,
-    PreTrainedTokenizer,
-    Trainer,
-    TrainerCallback,
-    TrainingArguments,
-    get_constant_schedule_with_warmup,
-    get_cosine_schedule_with_warmup,
-    get_linear_schedule_with_warmup,
-    set_seed,
-    BatchEncoding,
-    PreTrainedModel,
-    PreTrainedTokenizer,
-    TrainerCallback,
-    AutoModelForCausalLM, 
-
-)
-from transformers import GPTNeoXForCausalLM, AutoTokenizer
-from transformers.utils import ModelOutput
-from datasets import Dataset, DatasetDict, load_dataset
-from peft import (get_peft_config, get_peft_model, LoraConfig, TaskType, IA3Config, 
-                  PrefixTuningConfig, PromptEncoderConfig, PromptTuningConfig, PromptTuningInit,
-                  IA3Model)
-import torch
-import torch.nn.functional as F
-from custom_datasets import *
+from runner import run_training
 
 WANDB_PROJECT_NAME = "PEFT-Memorization-Analysis"
 
@@ -66,6 +35,7 @@ parser.add_argument("--gpu", type=int, default=0, help="Provide the gpu id")
 
 # Get the arguments
 args = parser.parse_args()
+
 fine_tuning_method = args.fine_tuning_method
 model_id = args.model
 task_name = args.task
@@ -106,16 +76,6 @@ if fine_tuning_method not in ["full-finetuning", "prefix-tuning", "prompt-tuning
 if fine_tuning_method == "freeze-subset":
     if bias_trainable and layer_norm_trainable and mlp_trainable and attention_trainable and embed_in_trainable and embed_out_trainable and len(layers_trainable) == 16:
         raise ValueError("All the layers are trainable. Please set at least one layer to be frozen. If you want to train all the layers, use full-finetuning method")
-    
-# Set the seed
-set_seed(seed)
-np.random.seed(seed)
-random.seed(seed)
-torch.manual_seed(seed)
-torch.cuda.manual_seed_all(seed)
-
-tokenizer = AutoTokenizer.from_pretrained(f"EleutherAI/{model_id}")
-tokenizer.pad_token = tokenizer.eos_token
 
 params_dict = {
     "task": task_name,
@@ -173,51 +133,9 @@ wandb.init(project=WANDB_PROJECT_NAME)
 wandb.run.name = run_name
 wandb.config.update(params_dict)
 
-if task_name == "random_strings":
-    dataset = generate_random_string_dataset(seed=seed, num_sequences=num_seq, sequence_length=seq_len)
-else:
-    raise ValueError("Invalid task name")
+params_dict["wandb_run_name"] = run_name
+params_dict["wandb_project_name"] = WANDB_PROJECT_NAME
 
-# Encode the dataset
-encoded_dataset = encode_character_wise(tokenizer, dataset)
+run_training(params_dict)
 
-model_id = 'EleutherAI/' + model_id
-
-# Get the model
-model = AutoModelForCausalLM.from_pretrained(model_id)
-
-# Get the config
-if fine_tuning_method == "IA3":
-    config = IA3Config(peft_type="IA3", task_type=TaskType.CAUSAL_LM, target_modules=target_modules_IA3, feed_forward_modules=feed_forward_modules_IA3)
-    model = IA3Model(model, config)
-elif fine_tuning_method == "lora":
-    config = LoraConfig(task_type=TaskType.CAUSAL_LM, r=r_lora, alpha=alpha_lora, dropout=dropout_lora, inference_mode=False)
-    model = get_peft_model(model, config)
-elif fine_tuning_method == "prefix-tuning":
-    config = PrefixTuningConfig(task_type=TaskType.CAUSAL_LM, num_virtual_tokens=num_virtual_tokens, inference_mode=False)
-    model = get_peft_model(model, config)
-elif fine_tuning_method == "prompt-tuning":
-    config = PromptTuningConfig(task_type=TaskType.CAUSAL_LM, num_virtual_tokens=num_virtual_tokens, prompt_tuning_init=PromptTuningInit.TEXT, init_text=init_text_prompt_tuning, tokenizer_name_or_path=model_id)
-    model = get_peft_model(model, config)
-elif fine_tuning_method == "p-tuning":
-    config = PromptEncoderConfig(task_type=TaskType.CAUSAL_LM, num_virtual_tokens=num_virtual_tokens, encoder_hidden_size=encoder_hidden_size_p_tuning)
-    model = get_peft_model(model, config)
-elif fine_tuning_method == "freeze-subset":
-    raise ValueError("To be implemented")
-elif fine_tuning_method == "full-finetuning":
-    pass
-
-model.print_trainable_parameters()
-
-training_args = TrainingArguments(
-    output_dir = run_name
-    evaluation_strategy = EVALUATION_STRATEGY,
-    learning_rate = LEARNING_RATE,
-    weight_decay = WEIGHT_DECAY,
-    num_train_epochs = NUM_TRAIN_EPOCHS,
-    # save_strategy = SAVE_STRATEGY,
-    run_name = RUN_NAME,
-    report_to=["wandb"],
-    # push_to_hub=True,
-)
-    
+wandb.finish()
